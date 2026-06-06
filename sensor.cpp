@@ -59,9 +59,10 @@ public:
 
       std::cout << "REGISTER sent" << std::endl;
 
-      ssize_t n = recv(sock, &msg, sizeof(msg), 0);
+      RegisterAck ack;
+      ssize_t n = recv(sock, &ack, sizeof(ack), MSG_WAITALL);
 
-      if (n <= 0) {
+      if (n < (ssize_t)sizeof(ack)) {
         continue;
       }
       std::cout << "REGISTER acknowledged\n";

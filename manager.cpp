@@ -77,9 +77,9 @@ public:
 
       RegisterMessage msg;
 
-      ssize_t n = recv(client_socket, &msg, sizeof(msg), 0);
+      ssize_t n = recv(client_socket, &msg, sizeof(msg), MSG_WAITALL);
 
-      if (n <= 0) {
+      if (n < (ssize_t)sizeof(msg)) {
         close(client_socket);
         continue;
       }
@@ -130,13 +130,22 @@ public:
       int msg_type = header.first_byte & 0x0f;
 
       switch (msg_type) {
-      case (SENSOR_DATA):
+      case (SENSOR_DATA): {
         SensorData msg;
-        recv(device.socket, &msg, sizeof(msg), 0);
-        handle_sensor_data(device.type, msg.data);
+        ssize_t bytes_read = recv(device.socket, &msg, sizeof(msg), MSG_WAITALL);
+        //Confere para ver se chegou o total de bytes esperados
+        if (bytes_read == sizeof(msg)) {
+          handle_sensor_data(device.type, msg.data);
+        } else {
+          return; //Sensor desconectou ou houve outro erro
+        }
         break;
-      default:
+      }
+      default: {
+        //Lixo de rede ou mensagem não implementada (recebe só pra limpar a fila)
+        recv(device.socket, &header, sizeof(header), 0);
         break;
+      }
       }
     }
   }

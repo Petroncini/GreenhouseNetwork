@@ -15,8 +15,7 @@ public:
   int sock;
 
   Actuator(int id, DeviceType type)
-      : id(id), type(type), sock(-1), gen(std::random_device{}()),
-        dist(25.0, 5.0) {}
+      : id(id), type(type), sock(-1) {}
 
   void connect_to_manager() {
     sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -56,9 +55,10 @@ public:
 
       std::cout << "REGISTER sent" << std::endl;
 
-      ssize_t n = recv(sock, &msg, sizeof(msg), 0);
+      RegisterAck ack;
+      ssize_t n = recv(sock, &ack, sizeof(ack), MSG_WAITALL);
 
-      if (n <= 0) {
+      if (n < (ssize_t)sizeof(ack)) {
         continue;
       }
       std::cout << "REGISTER acknowledged\n";
@@ -66,30 +66,29 @@ public:
     }
   }
 
-  void send_data(void) {
+  void receive_commands() {
+    Header header;
     while (true) {
-      float data = dist(gen);
+      ssize_t n = recv(sock, &header, sizeof(header), MSG_PEEK);
+      if (n <= 0) return;
 
-      SensorData msg;
-      msg.header.first_byte = (PROTOCOL_ID << 4) | SENSOR_DATA;
-      msg.id = id;
-      msg.data = data;
+      int msg_type = header.first_byte & 0x0f;
 
-      send(sock, &msg, sizeof(msg), 0);
-      sleep(1);
+      // Dummy logic for testing PEEK and consuming bytes
+      recv(sock, &header, sizeof(header), 0);
     }
   }
 };
 
 int main(int argc, char *argv[]) {
-  Sensor sensor(1, DEVICE_TEMP_SENSOR_OR_HEATER);
+  Actuator actuator(2, DEVICE_COOLER);
 
-  sensor.connect_to_manager();
+  actuator.connect_to_manager();
 
   std::cout << "Connected!" << std::endl;
 
-  sensor.send_register();
-  sensor.send_data();
+  actuator.send_register();
+  actuator.receive_commands();
 
-  sleep(1000);
+  return 0;
 }
