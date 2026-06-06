@@ -135,7 +135,13 @@ public:
         ssize_t bytes_read = recv(device.socket, &msg, sizeof(msg), MSG_WAITALL);
         //Confere para ver se chegou o total de bytes esperados
         if (bytes_read == sizeof(msg)) {
-          handle_sensor_data(device.type, msg.data);
+          // Reverte o uint32_t da ordem da rede para a ordem do host
+          uint32_t host_data = ntohl(msg.data);
+          float real_data;
+          // Copia os bits de volta para um float
+          memcpy(&real_data, &host_data, sizeof(float));
+          
+          handle_sensor_data(device.type, real_data);
         } else {
           return; //Sensor desconectou ou houve outro erro
         }

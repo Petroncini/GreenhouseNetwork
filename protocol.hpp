@@ -53,7 +53,7 @@ struct RegisterAck {
 struct SensorData {
   Header header;
   uint8_t id;
-  float data;
+  uint32_t data;
 };
 
 #pragma pack(pop)

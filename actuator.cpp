@@ -46,7 +46,7 @@ public:
       msg.header.first_byte = (PROTOCOL_ID << 4) | REGISTER;
 
       msg.id = id;
-      msg.deviceClass = DEVICE_CLASS_SENSOR;
+      msg.deviceClass = DEVICE_CLASS_ACTUATOR;
       msg.deviceType = type;
 
       if (send(sock, &msg, sizeof(msg), 0) < 0) {

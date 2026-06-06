@@ -72,12 +72,16 @@ public:
 
   void send_data(void) {
     while (true) {
-      float data = dist(gen);
+      float raw_data = dist(gen);
 
       SensorData msg;
       msg.header.first_byte = (PROTOCOL_ID << 4) | SENSOR_DATA;
       msg.id = id;
-      msg.data = data;
+      
+      // Copia o float para um uint32_t de forma segura e converte para Network Byte Order
+      uint32_t net_data;
+      memcpy(&net_data, &raw_data, sizeof(float));
+      msg.data = htonl(net_data);
 
       send(sock, &msg, sizeof(msg), 0);
       sleep(1);
