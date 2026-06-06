@@ -1,19 +1,19 @@
 #include <stdint.h>
 
-typedef enum { DEVICE_CLASS_SENSOR = 0, DEVICE_CLASS_ACTUATOR = 1 } DeviceClass;
+enum DeviceClass : uint8_t { DEVICE_CLASS_SENSOR = 0, DEVICE_CLASS_ACTUATOR = 1 };
 
-typedef enum {
+enum DeviceType : uint8_t {
   DEVICE_TEMP_SENSOR_OR_HEATER = 0,
   DEVICE_SOIL_MOISTURE_OR_IRRIGATION = 1,
   DEVICE_CO2_SENSOR_OR_INJECTOR = 2,
   DEVICE_COOLER = 3
-} DeviceType;
+};
 
-typedef enum { ACTUATOR_OFF = 0, ACTUATOR_ON = 1 } ActuatorStatus;
+enum ActuatorStatus : uint8_t { ACTUATOR_OFF = 0, ACTUATOR_ON = 1 };
 
-typedef enum { DATA_TEMPERATURE = 0, DATA_HUMIDITY = 1, DATA_CO2 = 2 } DataType;
+enum DataType : uint8_t { DATA_TEMPERATURE = 0, DATA_HUMIDITY = 1, DATA_CO2 = 2 };
 
-typedef enum {
+enum MessageType : uint8_t {
   REGISTER = 1,
   REGISTER_ACK = 2,
   SENSOR_DATA = 3,
@@ -26,11 +26,13 @@ typedef enum {
   CONFIG_ACK = 10,
   QUERY_CONFIG = 11,
   CONFIG_RESPONSE = 12
-} MessageType;
+};
 
 #define PROTOCOL_ID 0xF
 
 #define MANAGER_PORT 5003
+
+#pragma pack(push, 1)
 
 struct Header {
   uint8_t first_byte;
@@ -38,18 +40,20 @@ struct Header {
 
 struct RegisterMessage {
   Header header;
-  int id;
+  uint8_t id;
   DeviceClass deviceClass;
   DeviceType deviceType;
 };
 
 struct RegisterAck {
   Header header;
-  int id;
+  uint8_t id;
 };
 
 struct SensorData {
   Header header;
-  int id;
+  uint8_t id;
   float data;
 };
+
+#pragma pack(pop)
