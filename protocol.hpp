@@ -56,4 +56,21 @@ struct SensorData {
   uint32_t data;
 };
 
+struct ActuatorStatusReq {
+  Header header;
+  uint8_t id;
+};
+
+struct ActuatorStatusMsg {
+  Header header;
+  uint8_t id;
+  ActuatorStatus status;
+};
+
+struct ActuatorSet {
+  Header header;
+  uint8_t id;
+  ActuatorStatus status;
+};
+
 #pragma pack(pop)

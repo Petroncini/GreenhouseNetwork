@@ -13,9 +13,10 @@ public:
   int id;
   DeviceType type;
   int sock;
+  ActuatorStatus current_status;
 
   Actuator(int id, DeviceType type)
-      : id(id), type(type), sock(-1) {}
+      : id(id), type(type), sock(-1), current_status(ACTUATOR_OFF) {}
 
   void connect_to_manager() {
     sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -66,6 +67,15 @@ public:
     }
   }
 
+  void send_status() {
+    ActuatorStatusMsg msg;
+    msg.header.first_byte = (PROTOCOL_ID << 4) | ACTUATOR_STATUS;
+    msg.id = id;
+    msg.status = current_status;
+    send(sock, &msg, sizeof(msg), 0);
+    std::cout << "ACTUATOR_STATUS sent (" << (current_status == ACTUATOR_ON ? "ON" : "OFF") << ")" << std::endl;
+  }
+
   void receive_commands() {
     Header header;
     while (true) {
@@ -74,8 +84,40 @@ public:
 
       int msg_type = header.first_byte & 0x0f;
 
-      // Dummy logic for testing PEEK and consuming bytes
-      recv(sock, &header, sizeof(header), 0);
+      switch (msg_type) {
+        case ACTUATOR_STATUS_REQ: {
+          ActuatorStatusReq req;
+          ssize_t bytes_read = recv(sock, &req, sizeof(req), MSG_WAITALL);
+          if (bytes_read == sizeof(req)) {
+             if (req.id == this->id) {
+               std::cout << "ACTUATOR_STATUS_REQ received." << std::endl;
+               send_status();
+             }
+          } else { 
+             return; 
+          }
+          break;
+        }
+        case ACTUATOR_SET: {
+          ActuatorSet set_cmd;
+          ssize_t bytes_read = recv(sock, &set_cmd, sizeof(set_cmd), MSG_WAITALL);
+          if (bytes_read == sizeof(set_cmd)) {
+             if (set_cmd.id == this->id) {
+               current_status = set_cmd.status;
+               std::cout << "ACTUATOR_SET received. State changed to " << (current_status == ACTUATOR_ON ? "ON" : "OFF") << std::endl;
+               send_status();
+             }
+          } else { 
+             return; 
+          }
+          break;
+        }
+        default: {
+          //Consumindo bytes desconhecidos
+          recv(sock, &header, sizeof(header), 0);
+          break;
+        }
+      }
     }
   }
 };

@@ -147,6 +147,19 @@ public:
         }
         break;
       }
+      case (ACTUATOR_STATUS): {
+        ActuatorStatusMsg msg;
+        ssize_t bytes_read = recv(device.socket, &msg, sizeof(msg), MSG_WAITALL);
+        if (bytes_read == sizeof(msg)) {
+          // Atualiza o estado do atuador na memória do servidor
+          actuators[msg.id].status = msg.status;
+          std::cout << "Actuator status received: " << (int)msg.id << " -> " 
+                    << (msg.status == ACTUATOR_ON ? "ON" : "OFF") << std::endl;
+        } else {
+          return; //Atuador desconectou ou erro
+        }
+        break;
+      }
       default: {
         //Lixo de rede ou mensagem não implementada (recebe só pra limpar a fila)
         recv(device.socket, &header, sizeof(header), 0);
