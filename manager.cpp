@@ -31,6 +31,14 @@ public:
   float humidity;
   int listening_socket;
 
+  //Variaveis de controle do manager
+  float max_temp;
+  float min_temp;
+  float max_co2;
+  float min_co2;
+  float max_humidity;
+  float min_humidity;
+
   unordered_map<int, DeviceInfo> sensors;
   unordered_map<int, DeviceInfo> actuators;
 
@@ -41,6 +49,13 @@ public:
     temp = 0;
     co2 = 0;
     humidity = 0;
+
+    max_temp = 9999999;
+    min_temp = -1;
+    max_co2 = 9999999;
+    min_co2 = -1;
+    max_humidity = 9999999;
+    min_humidity = -1;
   }
 
   void open_listening_socket() {
@@ -176,11 +191,62 @@ public:
       }
     }
   }
+
+  void find_set_actuators(DeviceType tipo, ActuatorStatus status){
+    lock_guard<mutex> lock(device_mutex);
+    for(auto &[id, device] : actuators){
+      if(device.type == tipo && device.status != status){
+        ActuatorSet msg;
+        msg.header.first_byte = (PROTOCOL_ID << 4) | ACTUATOR_SET;
+        msg.id = device.id;
+        msg.status = status;
+        send(device.socket, &msg, sizeof(msg), 0);
+        device.status = status;
+      }
+    }
+  };
+
+  void control_loop(){
+    float local_temp, local_co2, local_humidity;
+    while(true){
+      //Checar se algum valor esta fora do padrao
+      
+      {
+        lock_guard<mutex> lock(state_mutex);
+        local_temp = temp;
+        local_co2 = co2;
+        local_humidity = humidity;
+      }
+      if(local_temp > max_temp){ //Desliga os aquecedores e liga os coolers
+        find_set_actuators(DEVICE_TEMP_SENSOR_OR_HEATER, ACTUATOR_OFF);
+        find_set_actuators(DEVICE_COOLER, ACTUATOR_ON);
+      }
+      if(local_temp < min_temp){ //Liga os aquecedores e desliga os coolers
+        find_set_actuators(DEVICE_TEMP_SENSOR_OR_HEATER, ACTUATOR_ON);
+        find_set_actuators(DEVICE_COOLER, ACTUATOR_OFF);
+      }
+      if(local_co2 > max_co2){ //Desliga os injetores
+        find_set_actuators(DEVICE_CO2_SENSOR_OR_INJECTOR, ACTUATOR_OFF);
+      }
+      if(local_co2 < min_co2){ //Liga os injetores
+        find_set_actuators(DEVICE_CO2_SENSOR_OR_INJECTOR, ACTUATOR_ON);
+      }
+      if(local_humidity > max_humidity){ //Desliga os irrigadores
+        find_set_actuators(DEVICE_SOIL_MOISTURE_OR_IRRIGATION, ACTUATOR_OFF);
+      }
+      if(local_humidity < min_humidity){ //Liga os irrigadores
+        find_set_actuators(DEVICE_SOIL_MOISTURE_OR_IRRIGATION, ACTUATOR_ON);
+      }
+
+      sleep(1);
+    }
+  }
 };
 
 int main(int argc, char *argv[]) {
   Manager manager = Manager();
 
   manager.open_listening_socket();
+  std::thread(&Manager::control_loop, &manager).detach();
   manager.accept_connection();
 }
