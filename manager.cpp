@@ -35,6 +35,7 @@ public:
   unordered_map<int, DeviceInfo> actuators;
 
   mutex state_mutex;
+  mutex device_mutex;
 
   Manager() {
     temp = 0;
@@ -65,7 +66,7 @@ public:
   }
 
   void register_device(const DeviceInfo &device, DeviceClass cls) {
-    lock_guard<mutex> lock(state_mutex);
+    lock_guard<mutex> lock(device_mutex);
     if (cls == DEVICE_CLASS_SENSOR) {
       sensors[device.id] = device;
     } else if (cls == DEVICE_CLASS_ACTUATOR) {
@@ -158,7 +159,7 @@ public:
         ssize_t bytes_read = recv(device.socket, &msg, sizeof(msg), MSG_WAITALL);
         if (bytes_read == sizeof(msg)) {
           // Atualiza o estado do atuador na memória do servidor
-          lock_guard<mutex> lock(state_mutex);
+          lock_guard<mutex> lock(device_mutex);
           actuators[msg.id].status = msg.status;
           std::cout << "Actuator status received: " << (int)msg.id << " -> " 
                     << (msg.status == ACTUATOR_ON ? "ON" : "OFF") << std::endl;
