@@ -6,6 +6,7 @@
 #include <thread>
 #include <unistd.h>
 #include <unordered_map>
+#include <mutex>
 
 using namespace std;
 
@@ -32,6 +33,8 @@ public:
 
   unordered_map<int, DeviceInfo> sensors;
   unordered_map<int, DeviceInfo> actuators;
+
+  mutex state_mutex;
 
   Manager() {
     temp = 0;
@@ -62,6 +65,7 @@ public:
   }
 
   void register_device(const DeviceInfo &device, DeviceClass cls) {
+    lock_guard<mutex> lock(state_mutex);
     if (cls == DEVICE_CLASS_SENSOR) {
       sensors[device.id] = device;
     } else if (cls == DEVICE_CLASS_ACTUATOR) {
@@ -104,6 +108,7 @@ public:
   }
 
   void handle_sensor_data(DeviceType type, float data) {
+    lock_guard<mutex> lock(state_mutex);
     switch (type) {
       case (DEVICE_TEMP_SENSOR_OR_HEATER):
         temp = data;
@@ -117,6 +122,7 @@ public:
       default:
         break;
     }
+    //Destrava automaticamente o mutex
   }
 
   void connection_handler(DeviceInfo device) {
@@ -152,6 +158,7 @@ public:
         ssize_t bytes_read = recv(device.socket, &msg, sizeof(msg), MSG_WAITALL);
         if (bytes_read == sizeof(msg)) {
           // Atualiza o estado do atuador na memória do servidor
+          lock_guard<mutex> lock(state_mutex);
           actuators[msg.id].status = msg.status;
           std::cout << "Actuator status received: " << (int)msg.id << " -> " 
                     << (msg.status == ACTUATOR_ON ? "ON" : "OFF") << std::endl;
