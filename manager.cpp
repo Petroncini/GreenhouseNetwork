@@ -61,7 +61,8 @@ public:
     sensor_registered = false;
   }
 
-    void handle_sensor_data(DeviceType type, float data) {
+  void handle_sensor_data(DeviceType type, float data) {
+    lock_guard<mutex> lock(state_mutex);
     switch (type) {
       case (DEVICE_TEMP_SENSOR_OR_HEATER):
         temp = data;
@@ -75,6 +76,7 @@ public:
       default:
         break;
     }
+    //Destrava automaticamente o mutex
   }
 
   void udp_listener() {
@@ -187,6 +189,8 @@ public:
 
       register_device(device, msg.deviceClass);
 
+      std::thread(&Manager::connection_handler, this, device).detach();
+
       // Send ACK before spawning the handler so the sensor is guaranteed
       // to receive the acknowledgment before the handler thread starts.
       RegisterAck ack;
@@ -196,24 +200,7 @@ public:
       if (send(client_socket, &ack, sizeof(ack), 0) < 0) {
         perror("send");
       }
-
-  void handle_sensor_data(DeviceType type, float data) {
-    lock_guard<mutex> lock(state_mutex);
-    switch (type) {
-      case (DEVICE_TEMP_SENSOR_OR_HEATER):
-        temp = data;
-        break;
-      case (DEVICE_SOIL_MOISTURE_OR_IRRIGATION):
-        humidity = data;
-        break;
-      case (DEVICE_CO2_SENSOR_OR_INJECTOR):
-        co2 = data;
-        break;
-      default:
-        break;
-      std::thread(&Manager::connection_handler, this, device).detach();
     }
-    //Destrava automaticamente o mutex
   }
 
 
@@ -300,6 +287,7 @@ public:
 
       sleep(1);
     }
+  }
   void wait_for_quit() {
     std::cout << "Press 'q' + Enter to shut down the manager.\n";
     char c;
@@ -320,11 +308,9 @@ public:
 
 int main(int argc, char *argv[]) {
   Manager manager = Manager();
-
-  manager.open_listening_socket();
-  std::thread(&Manager::control_loop, &manager).detach();
+  
   manager.open_sockets();
-
+  std::thread(&Manager::control_loop, &manager).detach();
   std::thread quit_thread(&Manager::wait_for_quit, &manager);
   quit_thread.detach();
 
