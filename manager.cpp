@@ -29,6 +29,8 @@ public:
   float co2;
   float humidity;
   int listening_socket;
+  int udp_socket;
+  bool sensor_registered;
 
   unordered_map<int, DeviceInfo> sensors;
   unordered_map<int, DeviceInfo> actuators;
@@ -37,18 +39,72 @@ public:
     temp = 0;
     co2 = 0;
     humidity = 0;
+    sensor_registered = false;
   }
 
-  void open_listening_socket() {
+    void handle_sensor_data(DeviceType type, float data) {
+    switch (type) {
+      case (DEVICE_TEMP_SENSOR_OR_HEATER):
+        temp = data;
+        break;
+      case (DEVICE_SOIL_MOISTURE_OR_IRRIGATION):
+        humidity = data;
+        break;
+      case (DEVICE_CO2_SENSOR_OR_INJECTOR):
+        co2 = data;
+        break;
+      default:
+        break;
+    }
+  }
+
+  void udp_listener() {
+    while(true) {
+      SensorData msg;
+
+        sockaddr_in sender;
+        socklen_t len = sizeof(sender);
+        std::cout << "Listening\n";
+
+        ssize_t n = recvfrom(
+            udp_socket,
+            &msg,
+            sizeof(msg),
+            0,
+            (sockaddr*)&sender,
+            &len);
+
+        if (n < 0) {
+            perror("recvfrom");
+            continue;
+        }
+
+        if (n != sizeof(msg)) {
+            continue;
+        }
+        
+        uint8_t host_id = msg.id;
+        uint32_t host_data = ntohl(msg.data);
+
+        if(sensors.find(host_id) == sensors.end()) continue;
+
+        float value;
+        memcpy(&value, &host_data, sizeof(float));
+        printf("Received data from %d: %f\n", host_id, value);
+        handle_sensor_data(sensors[host_id].type, value);
+    } 
+  }
+
+  void open_sockets() {
     listening_socket = socket(AF_INET, SOCK_STREAM, 0);
 
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(MANAGER_PORT);
+    sockaddr_in tcp_addr{};
+    tcp_addr.sin_family = AF_INET;
+    tcp_addr.sin_addr.s_addr = INADDR_ANY;
+    tcp_addr.sin_port = htons(MANAGER_PORT);
 
-    if (::bind(listening_socket, reinterpret_cast<sockaddr *>(&addr),
-               sizeof(addr)) < 0) {
+    if (::bind(listening_socket, reinterpret_cast<sockaddr *>(&tcp_addr),
+               sizeof(tcp_addr)) < 0) {
       perror("bind");
       exit(1);
     }
@@ -59,11 +115,31 @@ public:
     }
 
     cout << "Listening to port " << MANAGER_PORT << endl;
+
+    udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+
+    sockaddr_in udp_addr{};
+    udp_addr.sin_family = AF_INET;
+    udp_addr.sin_addr.s_addr = INADDR_ANY;
+    udp_addr.sin_port = htons(SENSOR_PORT);
+
+    if (::bind(udp_socket,
+            reinterpret_cast<sockaddr*>(&udp_addr),
+            sizeof(udp_addr)) < 0)
+    {
+        perror("bind");
+        exit(1);
+    } // tem que mudar pra só dar bind quando registrar algum sensor?
+
   }
 
   void register_device(const DeviceInfo &device, DeviceClass cls) {
     if (cls == DEVICE_CLASS_SENSOR) {
       sensors[device.id] = device;
+      if(!sensor_registered) {
+        sensor_registered = true;
+        std::thread(&Manager::udp_listener, this).detach();
+      }
     } else if (cls == DEVICE_CLASS_ACTUATOR) {
       actuators[device.id] = device;
     }
@@ -91,8 +167,8 @@ public:
 
       register_device(device, msg.deviceClass);
 
-      std::thread(&Manager::connection_handler, this, device).detach();
-
+      // Send ACK before spawning the handler so the sensor is guaranteed
+      // to receive the acknowledgment before the handler thread starts.
       RegisterAck ack;
       ack.header.first_byte = (PROTOCOL_ID << 4) | REGISTER_ACK;
       ack.id = msg.id;
@@ -100,24 +176,12 @@ public:
       if (send(client_socket, &ack, sizeof(ack), 0) < 0) {
         perror("send");
       }
+
+      std::thread(&Manager::connection_handler, this, device).detach();
     }
   }
 
-  void handle_sensor_data(DeviceType type, float data) {
-    switch (type) {
-      case (DEVICE_TEMP_SENSOR_OR_HEATER):
-        temp = data;
-        break;
-      case (DEVICE_SOIL_MOISTURE_OR_IRRIGATION):
-        humidity = data;
-        break;
-      case (DEVICE_CO2_SENSOR_OR_INJECTOR):
-        co2 = data;
-        break;
-      default:
-        break;
-    }
-  }
+
 
   void connection_handler(DeviceInfo device) {
     Header header;
@@ -130,23 +194,6 @@ public:
       int msg_type = header.first_byte & 0x0f;
 
       switch (msg_type) {
-      case (SENSOR_DATA): {
-        SensorData msg;
-        ssize_t bytes_read = recv(device.socket, &msg, sizeof(msg), MSG_WAITALL);
-        //Confere para ver se chegou o total de bytes esperados
-        if (bytes_read == sizeof(msg)) {
-          // Reverte o uint32_t da ordem da rede para a ordem do host
-          uint32_t host_data = ntohl(msg.data);
-          float real_data;
-          // Copia os bits de volta para um float
-          memcpy(&real_data, &host_data, sizeof(float));
-          
-          handle_sensor_data(device.type, real_data);
-        } else {
-          return; //Sensor desconectou ou houve outro erro
-        }
-        break;
-      }
       case (ACTUATOR_STATUS): {
         ActuatorStatusMsg msg;
         ssize_t bytes_read = recv(device.socket, &msg, sizeof(msg), MSG_WAITALL);
@@ -168,11 +215,32 @@ public:
       }
     }
   }
+
+  void wait_for_quit() {
+    std::cout << "Press 'q' + Enter to shut down the manager.\n";
+    char c;
+    while (std::cin.get(c)) {
+      if (c == 'q' || c == 'Q') {
+        std::cout << "Shutting down...\n";
+        // Close client sockets so their handler threads unblock
+        for (auto &[id, dev] : sensors)   { close(dev.socket); }
+        for (auto &[id, dev] : actuators) { close(dev.socket); }
+        // Close server sockets – unblocks accept() and recvfrom()
+        if (udp_socket >= 0)      { close(udp_socket); }
+        if (listening_socket >= 0){ close(listening_socket); }
+        exit(0);
+      }
+    }
+  }
 };
 
 int main(int argc, char *argv[]) {
   Manager manager = Manager();
 
-  manager.open_listening_socket();
+  manager.open_sockets();
+
+  std::thread quit_thread(&Manager::wait_for_quit, &manager);
+  quit_thread.detach();
+
   manager.accept_connection();
 }

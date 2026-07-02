@@ -30,7 +30,9 @@ enum MessageType : uint8_t {
 
 #define PROTOCOL_ID 0xF
 
-#define MANAGER_PORT 5003
+#define MANAGER_PORT 5007
+
+#define SENSOR_PORT 6006
 
 #pragma pack(push, 1)
 
@@ -51,7 +53,6 @@ struct RegisterAck {
 };
 
 struct SensorData {
-  Header header;
   uint8_t id;
   uint32_t data;
 };
