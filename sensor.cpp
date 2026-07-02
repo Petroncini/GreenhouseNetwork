@@ -13,6 +13,9 @@ public:
   uint8_t id;
   DeviceType type;
   int sock;
+  int udp_sock;
+  sockaddr_in manager_addr{};
+  sockaddr_in udp_manager_addr{};
 
   std::mt19937 gen;
   std::normal_distribution<float> dist;
@@ -29,11 +32,14 @@ public:
       exit(1);
     }
 
-    sockaddr_in manager_addr{};
     manager_addr.sin_family = AF_INET;
     manager_addr.sin_port = htons(MANAGER_PORT);
-
     inet_pton(AF_INET, "127.0.0.1", &manager_addr.sin_addr);
+
+    // Separate destination for UDP sensor data (manager listens on SENSOR_PORT)
+    udp_manager_addr.sin_family = AF_INET;
+    udp_manager_addr.sin_port = htons(SENSOR_PORT);
+    inet_pton(AF_INET, "127.0.0.1", &udp_manager_addr.sin_addr);
 
     if (connect(sock, reinterpret_cast<sockaddr *>(&manager_addr),
                 sizeof(manager_addr)) < 0) {
@@ -66,6 +72,12 @@ public:
         continue;
       }
       std::cout << "REGISTER acknowledged\n";
+
+      udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
+      if (udp_sock < 0) {
+          perror("socket (udp)");
+          exit(1);
+      }
       break;
     }
   }
@@ -75,16 +87,36 @@ public:
       float raw_data = dist(gen);
 
       SensorData msg;
-      msg.header.first_byte = (PROTOCOL_ID << 4) | SENSOR_DATA;
       msg.id = id;
-      
-      // Copia o float para um uint32_t de forma segura e converte para Network Byte Order
-      uint32_t net_data;
-      memcpy(&net_data, &raw_data, sizeof(float));
-      msg.data = htonl(net_data);
 
-      send(sock, &msg, sizeof(msg), 0);
+      uint32_t bits;
+      memcpy(&bits, &raw_data, sizeof(bits));
+      msg.data = htonl(bits);
+      ssize_t n = sendto(
+          udp_sock,
+          &msg,
+          sizeof(msg),
+          0,
+          reinterpret_cast<sockaddr*>(&udp_manager_addr),
+          sizeof(udp_manager_addr));
+
+      if (n < 0)
+          perror("sendto");
+
       sleep(1);
+    }
+  }
+
+  void wait_for_quit() {
+    std::cout << "Press 'q' + Enter to disconnect and quit.\n";
+    char c;
+    while (std::cin.get(c)) {
+      if (c == 'q' || c == 'Q') {
+        std::cout << "Closing connection...\n";
+        if (udp_sock >= 0) { close(udp_sock); udp_sock = -1; }
+        if (sock >= 0)     { close(sock);     sock = -1; }
+        exit(0);
+      }
     }
   }
 };
@@ -97,7 +129,9 @@ int main(int argc, char *argv[]) {
   std::cout << "Connected!" << std::endl;
 
   sensor.send_register();
-  sensor.send_data();
 
-  sleep(1000);
+  std::thread quit_thread(&Sensor::wait_for_quit, &sensor);
+  quit_thread.detach();
+
+  sensor.send_data();
 }
