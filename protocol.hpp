@@ -28,10 +28,7 @@ enum MessageType : uint8_t {
   CONFIG_RESPONSE = 12
 };
 
-enum Boundary : uint8_t {
-  BOUNDARY_MIN = 0,
-  BOUNDARY_MAX = 1
-};
+enum Boundary : uint8_t {  BOUNDARY_MIN = 0, BOUNDARY_MAX = 1 };
 
 #define PROTOCOL_ID 0xF
 
