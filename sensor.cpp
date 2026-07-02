@@ -7,6 +7,9 @@
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
+#include <string>
+#include <algorithm>
+#include <stdexcept>
 
 class Sensor {
 public:
@@ -122,7 +125,49 @@ public:
 };
 
 int main(int argc, char *argv[]) {
-  Sensor sensor(1, DEVICE_TEMP_SENSOR_OR_HEATER);
+  if (argc < 3) {
+    std::cerr << "Usage: " << argv[0] << " <device_id> <device_type>\n"
+              << "Device types:\n"
+              << "  0 / temp / heater / temperature\n"
+              << "  1 / soil / moisture / irrigation\n"
+              << "  2 / co2 / injector\n"
+              << "  3 / cooler\n";
+    return 1;
+  }
+
+  int id_val;
+  try {
+    id_val = std::stoi(argv[1]);
+    if (id_val < 0 || id_val > 255) {
+      throw std::out_of_range("ID must be between 0 and 255");
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "Invalid device ID: " << argv[1] << " (" << e.what() << ")\n";
+    return 1;
+  }
+
+  DeviceType type;
+  try {
+    std::string type_arg = argv[2];
+    std::transform(type_arg.begin(), type_arg.end(), type_arg.begin(), ::tolower);
+    if (type_arg == "0" || type_arg == "temp" || type_arg == "heater" || type_arg == "temperature") {
+      type = DEVICE_TEMP_SENSOR_OR_HEATER;
+    } else if (type_arg == "1" || type_arg == "soil" || type_arg == "moisture" || type_arg == "irrigation") {
+      type = DEVICE_SOIL_MOISTURE_OR_IRRIGATION;
+    } else if (type_arg == "2" || type_arg == "co2" || type_arg == "injector") {
+      type = DEVICE_CO2_SENSOR_OR_INJECTOR;
+    } else if (type_arg == "3" || type_arg == "cooler") {
+      type = DEVICE_COOLER;
+    } else {
+      throw std::invalid_argument("Unknown device type");
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "Invalid device type: " << argv[2] << " (" << e.what() << ")\n"
+              << "Allowed values: 0 (temp), 1 (soil), 2 (co2), 3 (cooler)\n";
+    return 1;
+  }
+
+  Sensor sensor(id_val, type);
 
   sensor.connect_to_manager();
 

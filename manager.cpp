@@ -137,20 +137,7 @@ public:
 
     cout << "Listening to port " << MANAGER_PORT << endl;
 
-    udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
-
-    sockaddr_in udp_addr{};
-    udp_addr.sin_family = AF_INET;
-    udp_addr.sin_addr.s_addr = INADDR_ANY;
-    udp_addr.sin_port = htons(SENSOR_PORT);
-
-    if (::bind(udp_socket,
-            reinterpret_cast<sockaddr*>(&udp_addr),
-            sizeof(udp_addr)) < 0)
-    {
-        perror("bind");
-        exit(1);
-    } // tem que mudar pra só dar bind quando registrar algum sensor?
+    
 
   }
 
@@ -160,6 +147,22 @@ public:
       sensors[device.id] = device;
       if(!sensor_registered) {
         sensor_registered = true;
+
+        udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+
+        sockaddr_in udp_addr{};
+        udp_addr.sin_family = AF_INET;
+        udp_addr.sin_addr.s_addr = INADDR_ANY;
+        udp_addr.sin_port = htons(SENSOR_PORT);
+
+        if (::bind(udp_socket,
+                reinterpret_cast<sockaddr*>(&udp_addr),
+                sizeof(udp_addr)) < 0)
+        {
+            perror("bind");
+            exit(1);
+        } 
+        
         std::thread(&Manager::udp_listener, this).detach();
       }
     } else if (cls == DEVICE_CLASS_ACTUATOR) {
@@ -189,10 +192,6 @@ public:
 
       register_device(device, msg.deviceClass);
 
-      std::thread(&Manager::connection_handler, this, device).detach();
-
-      // Send ACK before spawning the handler so the sensor is guaranteed
-      // to receive the acknowledgment before the handler thread starts.
       RegisterAck ack;
       ack.header.first_byte = (PROTOCOL_ID << 4) | REGISTER_ACK;
       ack.id = msg.id;
@@ -200,6 +199,8 @@ public:
       if (send(client_socket, &ack, sizeof(ack), 0) < 0) {
         perror("send");
       }
+
+      std::thread(&Manager::connection_handler, this, device).detach();
     }
   }
 
@@ -294,10 +295,8 @@ public:
     while (std::cin.get(c)) {
       if (c == 'q' || c == 'Q') {
         std::cout << "Shutting down...\n";
-        // Close client sockets so their handler threads unblock
         for (auto &[id, dev] : sensors)   { close(dev.socket); }
         for (auto &[id, dev] : actuators) { close(dev.socket); }
-        // Close server sockets – unblocks accept() and recvfrom()
         if (udp_socket >= 0)      { close(udp_socket); }
         if (listening_socket >= 0){ close(listening_socket); }
         exit(0);
