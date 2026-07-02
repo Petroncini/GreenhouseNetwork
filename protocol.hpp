@@ -28,6 +28,11 @@ enum MessageType : uint8_t {
   CONFIG_RESPONSE = 12
 };
 
+enum Boundary : uint8_t {
+  BOUNDARY_MIN = 0,
+  BOUNDARY_MAX = 1
+};
+
 #define PROTOCOL_ID 0xF
 
 #define MANAGER_PORT 5007
@@ -72,6 +77,43 @@ struct ActuatorSet {
   Header header;
   uint8_t id;
   ActuatorStatus status;
+};
+
+struct SensorQuery {
+  Header header;
+  DataType type;
+};
+
+struct SensorResponse {
+  Header header;
+  DataType type;
+  uint32_t data;
+};
+
+struct ConfigSet {
+  Header header;
+  DataType type;
+  Boundary minMax;
+  uint32_t value;
+};
+
+struct ConfigAck {
+  Header header;
+  DataType type;
+  Boundary minMax;
+  uint32_t value;
+};
+
+struct QueryConfig {
+  Header header;
+  DataType type;
+};
+
+struct ConfigResponse {
+  Header header;
+  DataType type;
+  uint32_t minValue;
+  uint32_t maxValue;
 };
 
 #pragma pack(pop)
