@@ -25,7 +25,25 @@ public:
 
   Sensor(int id, DeviceType type)
       : id(id), type(type), sock(-1), gen(std::random_device{}()),
-        dist(25.0, 5.0) {}
+        dist(pick_mean(type), pick_stddev(type)) {}
+
+  static float pick_mean(DeviceType t) {
+    switch (t) {
+      case DEVICE_TEMP_SENSOR_OR_HEATER:      return 25.0f;  // range [15, 35]
+      case DEVICE_SOIL_MOISTURE_OR_IRRIGATION: return 60.0f; // range [40, 80]
+      case DEVICE_CO2_SENSOR_OR_INJECTOR:     return 700.0f; // range [400, 1000]
+      default:                                return 25.0f;
+    }
+  }
+
+  static float pick_stddev(DeviceType t) {
+    switch (t) {
+      case DEVICE_TEMP_SENSOR_OR_HEATER:      return 5.0f;   // ±2σ at [15, 35]
+      case DEVICE_SOIL_MOISTURE_OR_IRRIGATION: return 10.0f; // ±2σ at [40, 80]
+      case DEVICE_CO2_SENSOR_OR_INJECTOR:     return 150.0f; // ±2σ at [400, 1000]
+      default:                                return 5.0f;
+    }
+  }
 
   void connect_to_manager() {
     sock = socket(AF_INET, SOCK_STREAM, 0);

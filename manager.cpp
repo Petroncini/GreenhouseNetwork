@@ -236,6 +236,12 @@ public:
 
         if (msg.deviceClass == DEVICE_CLASS_ACTUATOR) {
           std::thread(&Manager::actuator_connection_handler, this, device).detach();
+
+          // Request the actuator's current status so we don't assume ACTUATOR_OFF
+          ActuatorStatusReq req;
+          req.header.first_byte = (PROTOCOL_ID << 4) | ACTUATOR_STATUS_REQ;
+          req.id = msg.id;
+          send(client_socket, &req, sizeof(req), 0);
         } else {
           // Sensors communicate over UDP after registration; TCP socket is no longer needed
           close(client_socket);
