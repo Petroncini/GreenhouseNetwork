@@ -186,34 +186,48 @@ public:
 
       cout << "New connection: " << client_socket << endl;
 
-      RegisterMessage msg;
-
-      ssize_t n = recv(client_socket, &msg, sizeof(msg), MSG_WAITALL);
-
-      if (n < (ssize_t)sizeof(msg)) {
+      // Checks the first byte to identify the connection type (device or external controller)
+      Header header;
+      ssize_t n = recv(client_socket, &header, sizeof(header), MSG_PEEK);
+      if (n <= 0) {
         close(client_socket);
         continue;
       }
 
-      printf("New device register: %d\n", msg.id);
+      int msg_type = header.first_byte & 0x0f;
 
-      DeviceInfo device =
-          DeviceInfo(client_socket, msg.id, msg.deviceClass, msg.deviceType);
+      if (msg_type == REGISTER) {
+        RegisterMessage msg;
+        n = recv(client_socket, &msg, sizeof(msg), MSG_WAITALL);
+        if (n < (ssize_t)sizeof(msg)) {
+          close(client_socket);
+          continue;
+        }
 
-      if(register_device(device, msg.deviceClass)){
-        std::cout << "Tentativa de conexao de ID ja existente: " << device.id << endl;
-        continue;
+        DeviceInfo device = DeviceInfo(client_socket, msg.id, msg.deviceClass, msg.deviceType);
+
+        if (register_device(device, msg.deviceClass)) {
+          std::cout << "Tentativa de conexao de ID ja existente: " << (int)device.id << endl;
+          close(client_socket);
+          continue;
+        }
+
+        printf("New device register: %d\n", msg.id);
+
+        std::thread(&Manager::connection_handler, this, device).detach();
+
+        // Send RegisterAck
+        RegisterAck ack;
+        ack.header.first_byte = (PROTOCOL_ID << 4) | REGISTER_ACK;
+        ack.id = msg.id;
+        if (send(client_socket, &ack, sizeof(ack), 0) < 0) {
+          perror("send RegisterAck");
+        }
+
+      } else {
+        cout << "Controller connected: socket " << client_socket << endl;
+        std::thread(&Manager::controller_handler, this, client_socket).detach();
       }
-
-      RegisterAck ack;
-      ack.header.first_byte = (PROTOCOL_ID << 4) | REGISTER_ACK;
-      ack.id = msg.id;
-
-      if (send(client_socket, &ack, sizeof(ack), 0) < 0) {
-        perror("send");
-      }
-
-      std::thread(&Manager::connection_handler, this, device).detach();
     }
   }
 
@@ -249,6 +263,125 @@ public:
         recv(device.socket, &header, sizeof(header), 0);
         break;
       }
+      }
+    }
+  }
+
+  void controller_handler(int client_socket) {
+    Header header;
+    while (true) {
+      ssize_t n = recv(client_socket, &header, sizeof(header), MSG_PEEK);
+      if (n <= 0) {
+        close(client_socket);
+        return;
+      }
+
+      int msg_type = header.first_byte & 0x0f;
+
+      switch (msg_type) {
+
+        case SENSOR_QUERY: {
+          SensorQuery req;
+          ssize_t bytes_read = recv(client_socket, &req, sizeof(req), MSG_WAITALL);
+          if (bytes_read != sizeof(req)) {
+            close(client_socket);
+            return;
+          }
+
+          float value = 0.0f;
+          {
+            lock_guard<mutex> lock(state_mutex);
+            switch (req.type) {
+              case DATA_TEMPERATURE: value = temp; break;
+              case DATA_HUMIDITY: value = humidity; break;
+              case DATA_CO2: value = co2; break;
+            }
+          }
+
+          uint32_t net_val;
+          memcpy(&net_val, &value, sizeof(net_val));
+          net_val = htonl(net_val);
+
+          SensorResponse resp;
+          resp.header.first_byte = (PROTOCOL_ID << 4) | SENSOR_RESPONSE;
+          resp.type = req.type;
+          resp.data = net_val;
+          send(client_socket, &resp, sizeof(resp), 0);
+          break;
+        }
+
+        case CONFIG_SET: {
+          ConfigSet req;
+          ssize_t bytes_read = recv(client_socket, &req, sizeof(req), MSG_WAITALL);
+          if (bytes_read != sizeof(req)) {
+            close(client_socket);
+            return;
+          }
+
+          uint32_t host_raw = ntohl(req.value);
+          float new_val;
+          memcpy(&new_val, &host_raw, sizeof(float));
+
+          // Update the limit
+          if (req.minMax == BOUNDARY_MIN) {
+            switch (req.type) {
+              case DATA_TEMPERATURE: min_temp = new_val; break;
+              case DATA_HUMIDITY: min_humidity = new_val; break;
+              case DATA_CO2: min_co2 = new_val; break;
+            }
+          } else {
+            switch (req.type) {
+              case DATA_TEMPERATURE: max_temp = new_val; break;
+              case DATA_HUMIDITY: max_humidity = new_val; break;
+              case DATA_CO2: max_co2 = new_val; break;
+            }
+          }
+
+          // Respond with CONFIG_ACK
+          ConfigAck ack;
+          ack.header.first_byte = (PROTOCOL_ID << 4) | CONFIG_ACK;
+          ack.type = req.type;
+          ack.minMax = req.minMax;
+          ack.value = req.value;
+          send(client_socket, &ack, sizeof(ack), 0);
+          break;
+        }
+
+        case QUERY_CONFIG: {
+          QueryConfig req;
+          ssize_t bytes_read = recv(client_socket, &req, sizeof(req), MSG_WAITALL);
+          if (bytes_read != sizeof(req)) {
+            close(client_socket);
+            return;
+          }
+
+          float fmin = 0.0f, fmax = 0.0f;
+          switch (req.type) {
+            case DATA_TEMPERATURE: fmin = min_temp; fmax = max_temp; break;
+            case DATA_HUMIDITY: fmin = min_humidity; fmax = max_humidity; break;
+            case DATA_CO2: fmin = min_co2; fmax = max_co2; break;
+          }
+
+          auto to_net = [](float f) -> uint32_t {
+            uint32_t tmp;
+            memcpy(&tmp, &f, sizeof(tmp));
+            return htonl(tmp);
+          };
+
+          ConfigResponse resp;
+          resp.header.first_byte = (PROTOCOL_ID << 4) | CONFIG_RESPONSE;
+          resp.type = req.type;
+          resp.minValue = to_net(fmin);
+          resp.maxValue = to_net(fmax);
+          send(client_socket, &resp, sizeof(resp), 0);
+          break;
+        }
+
+        default: {
+          // Unknown message
+          recv(client_socket, &header, sizeof(header), 0);
+          break;
+        }
       }
     }
   }
