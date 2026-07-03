@@ -76,6 +76,10 @@ public:
       }
       std::cout << "REGISTER acknowledged\n";
 
+      // TCP is no longer needed; all subsequent communication is UDP
+      close(sock);
+      sock = -1;
+
       udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
       if (udp_sock < 0) {
           perror("socket (udp)");
