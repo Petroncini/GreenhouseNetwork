@@ -52,8 +52,8 @@ public:
     co2 = 0;
     humidity = 0;
 
-    max_temp = 9999999;
-    min_temp = -1;
+    max_temp = 35;
+    min_temp = 15;
     max_co2 = 9999999;
     min_co2 = -1;
     max_humidity = 9999999;
@@ -141,9 +141,13 @@ public:
 
   }
 
-  void register_device(const DeviceInfo &device, DeviceClass cls) {
+  int register_device(const DeviceInfo &device, DeviceClass cls) {
     lock_guard<mutex> lock(device_mutex);
     if (cls == DEVICE_CLASS_SENSOR) {
+      if(sensors.find(device.id) != sensors.end()){
+        //ID ja existe
+        return 1;
+      }
       sensors[device.id] = device;
       if(!sensor_registered) {
         sensor_registered = true;
@@ -166,8 +170,14 @@ public:
         std::thread(&Manager::udp_listener, this).detach();
       }
     } else if (cls == DEVICE_CLASS_ACTUATOR) {
+      if(actuators.find(device.id) != actuators.end()){
+        //ID ja existe
+        return 1;
+      }
       actuators[device.id] = device;
     }
+
+    return 0;
   }
 
   void accept_connection() {
@@ -190,7 +200,10 @@ public:
       DeviceInfo device =
           DeviceInfo(client_socket, msg.id, msg.deviceClass, msg.deviceType);
 
-      register_device(device, msg.deviceClass);
+      if(register_device(device, msg.deviceClass)){
+        std::cout << "Tentativa de conexao de ID ja existente: " << device.id << endl;
+        continue;
+      }
 
       RegisterAck ack;
       ack.header.first_byte = (PROTOCOL_ID << 4) | REGISTER_ACK;
