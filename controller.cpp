@@ -145,12 +145,18 @@ public:
     }
 
     void run() {
-        cout << "\n=== Greenhouse Controller ===\n"
-             << "Commands:\n"
-             << "  1 <data_type>                     — query sensor (0 = temperature, 1 = humidity, 2 = CO2)\n"
-             << "  2 <data_type> <0=min|1=max> <val> — set config limit\n"
-             << "  3 <data_type>                     — query current config limits\n"
-             << "  q                                  — quit\n\n";
+		// Command menu
+        cout << "\n============== Greenhouse Controller ==============\n"
+             << "Commands:		— Data types: 0 = Temperature, 1 = Humidity, 2 = CO2\n\n"
+			 << " Query sensor:\n"
+             << "  [1] <data_type>\n\n"
+			 << " Query config limits:\n"
+             << "  [2] <data_type>\n\n"
+			 << " Set config limit:\n"
+             << "  [3] <data_type> <0=min|1=max> <value>\n\n"
+			 << " Disconnect and quit:\n"
+             << "  [q]\n\n"
+			 << "Type the command number and the parameters\n";
 
         string cmd;
         while (true) {
@@ -175,7 +181,7 @@ public:
 
             int type_int;
             if (!(cin >> type_int) || type_int < 0 || type_int > 2) {
-                cout << "Invalid data type (0=temp, 1=humidity, 2=co2)\n";
+                cout << "Invalid data type. Use: 0 = Temperature, 1 = Humidity, 2 = CO2\n";
                 cin.clear();
 				cin.ignore(1024, '\n');
                 continue;
@@ -188,10 +194,14 @@ public:
                     break;
                 }
                 case 2: {
-                    int boundary_int;
+                    query_config(dtype);
+                    break;
+                }
+                case 3: {
+					int boundary_int;
                     float value;
                     if (!(cin >> boundary_int) || boundary_int < 0 || boundary_int > 1) {
-                        cout << "Invalid boundary (0=min, 1=max)\n";
+                        cout << "Invalid boundary. Use the format: 3 <data_type> <0=min|1=max> <value>\n";
                         cin.clear();
 						cin.ignore(1024, '\n');
                         break;
@@ -203,10 +213,6 @@ public:
                         break;
                     }
                     set_config(dtype, static_cast<Boundary>(boundary_int), value);
-                    break;
-                }
-                case 3: {
-                    query_config(dtype);
                     break;
                 }
                 default:

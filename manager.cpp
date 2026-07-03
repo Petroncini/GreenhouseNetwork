@@ -54,10 +54,10 @@ public:
 
     max_temp = 35;
     min_temp = 15;
-    max_co2 = 9999999;
-    min_co2 = -1;
-    max_humidity = 9999999;
-    min_humidity = -1;
+    max_co2 = 1000;
+    min_co2 = 400;
+    max_humidity = 80;
+    min_humidity = 40;
     sensor_registered = false;
   }
 
@@ -119,6 +119,10 @@ public:
   void open_sockets() {
     listening_socket = socket(AF_INET, SOCK_STREAM, 0);
 
+    // Allow immediate reuse of the port after the manager is restarted
+    int opt = 1;
+    setsockopt(listening_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
     sockaddr_in tcp_addr{};
     tcp_addr.sin_family = AF_INET;
     tcp_addr.sin_addr.s_addr = INADDR_ANY;
@@ -153,6 +157,9 @@ public:
         sensor_registered = true;
 
         udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+
+        int opt = 1;
+        setsockopt(udp_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
         sockaddr_in udp_addr{};
         udp_addr.sin_family = AF_INET;
