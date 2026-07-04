@@ -141,9 +141,6 @@ public:
     }
 
     cout << "Listening to port " << MANAGER_PORT << endl;
-
-    
-
   }
 
   int register_device(const DeviceInfo &device, DeviceClass cls) {
@@ -427,6 +424,7 @@ public:
         msg.status = status;
         send(device.socket, &msg, sizeof(msg), 0);
         device.status = status;
+        printf("Set actuator %d to %s\n", device.id, status == ACTUATOR_ON ? "ON" : "OFF");
       }
     }
   };

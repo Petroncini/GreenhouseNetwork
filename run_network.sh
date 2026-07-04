@@ -37,7 +37,11 @@ run_in_terminal() {
     local wrapped="cd '$DIR' && $cmd; exit 0"
 
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        osascript -e "tell application \"Terminal\" to do script \"cd '$DIR' && echo -n -e '\\033]0;${title}\\007' && clear && ${cmd}\"" > /dev/null
+        osascript <<EOF > /dev/null
+tell application "Terminal"
+    do script "cd '${DIR}' && ${cmd}"
+end tell
+EOF
     elif command -v gnome-terminal &> /dev/null; then
         gnome-terminal --title="$title" -- bash -c "$wrapped" &
     elif command -v xfce4-terminal &> /dev/null; then
