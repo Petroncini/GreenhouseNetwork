@@ -90,6 +90,7 @@ public:
 
     // Reconfigura o limite maximo ou minimo de um parametro e imprime o CONFIG_ACK
     void set_config(DataType type, Boundary boundary, float value) {
+        // Constroi a mensagem CONFIG_SET
         ConfigSet msg;
         msg.header.first_byte = (PROTOCOL_ID << 4) | CONFIG_SET;
         msg.type   = type;
@@ -101,6 +102,7 @@ public:
             return;
         }
 
+        // Recebe e verifica a resposta CONFIG_ACK
         ConfigAck ack;
         ssize_t n = recv(sock, &ack, sizeof(ack), MSG_WAITALL);
         if (n != sizeof(ack)) {
@@ -114,6 +116,7 @@ public:
             return;
         }
 
+        // Imprime a resposta formatada
         const char *labels[]    = {"Temperature", "Humidity", "CO2"};
         const char *boundaries[] = {"min", "max"};
         cout << "Config ACK — "
@@ -123,6 +126,7 @@ public:
 
     // Consulta os limites atuais de um parametro configurados no gerenciador
     void query_config(DataType type) {
+        // Constroi a mensagem QUERY_CONFIG
         QueryConfig msg;
         msg.header.first_byte = (PROTOCOL_ID << 4) | QUERY_CONFIG;
         msg.type = type;
@@ -132,6 +136,7 @@ public:
             return;
         }
 
+        // Recebe e verifica a resposta CONFIG_RESPONSE
         ConfigResponse resp;
         ssize_t n = recv(sock, &resp, sizeof(resp), MSG_WAITALL);
         if (n != sizeof(resp)) {
@@ -145,12 +150,15 @@ public:
             return;
         }
 
+        // Imprime a resposta formatada
         const char *labels[] = {"Temperature (°C)", "Humidity (%)", "CO2 (ppm)"};
         cout << "Config for " << labels[resp.type] << ":\n"
              << "  min = " << net_to_float(resp.minValue) << "\n"
              << "  max = " << net_to_float(resp.maxValue) << endl;
     }
 
+    // Loop principal de execucao do controlador
+    // Recebe comandos do usuario e envia as mensagens correspondentes ao gerenciador
     void run() {
 		// Menu de comandos
         cout << "\n============== Greenhouse Controller ==============\n"
@@ -166,6 +174,7 @@ public:
 			 << "Type the command number and the parameters\n";
 
         string cmd;
+        // Laço de leitura dada entrada do usuarioś
         while (true) {
             cout << "> ";
             if (!(cin >> cmd))
@@ -196,8 +205,10 @@ public:
 				cin.ignore(1024, '\n');
                 continue;
             }
+            // Converte o numero lido para o tipo de dado correspondente
             DataType dtype = static_cast<DataType>(type_int);
 
+            // Seleciona a açao correspondente ao comando
             switch (choice) {
                 case 1: {
                     query_sensor(dtype);
