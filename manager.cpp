@@ -10,6 +10,7 @@
 
 using namespace std;
 
+// Define as inforaçoes sobre os dispositivos (sensores e atuadores)
 struct DeviceInfo {
   int socket;
   int id;
@@ -20,10 +21,11 @@ struct DeviceInfo {
   DeviceInfo() = default;
   DeviceInfo(int socket, int id, DeviceClass cls, DeviceType type)
       : socket(socket), id(id), cls(cls), type(type) {
-    status = ACTUATOR_OFF;
+    status = ACTUATOR_OFF; // Inicializa o status do atuador como desligado
   }
 };
 
+// Classe que implementa o gerenciador da estufa
 class Manager {
 public:
   float temp;
@@ -48,6 +50,7 @@ public:
   mutex device_mutex;
 
   Manager() {
+    // Inicializa as variaveis de estado
     temp = 0;
     co2 = 0;
     humidity = 0;
@@ -62,7 +65,7 @@ public:
   }
 
   void handle_sensor_data(DeviceType type, float data) {
-    // trata de dado do sensor, atualiza a variaável correspondente ao tipo do sensor
+    // Trata de dado do sensor, atualiza a variável correspondente ao tipo do sensor
     lock_guard<mutex> lock(state_mutex);
     switch (type) {
       case (DEVICE_TEMP_SENSOR_OR_HEATER):
@@ -81,6 +84,7 @@ public:
   }
 
   void udp_listener() {
+    // Thread que escuta os dados enviados pelos sensores via UDP
     while(true) {
       SensorData msg;
 
@@ -108,8 +112,10 @@ public:
         uint8_t host_id = msg.id;
         uint32_t host_data = ntohl(msg.data);
 
+        // Verifica se o sensor esta registrado. Se nao, ignora o dado
         if(sensors.find(host_id) == sensors.end()) continue;
 
+        // Armazena o dado em um float para ser utilizado pelo programa
         float value;
         memcpy(&value, &host_data, sizeof(float));
         printf("Received data from %d: %f\n", host_id, value);
@@ -120,21 +126,24 @@ public:
   void open_sockets() {
     listening_socket = socket(AF_INET, SOCK_STREAM, 0);
 
-    // Allow immediate reuse of the port after the manager is restarted
+    // Permite que a porta seja reutilizada assim que o manager for reiniciado
     int opt = 1;
     setsockopt(listening_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
+    // Configura o endereço IP e a porta para o manager
     sockaddr_in tcp_addr{};
     tcp_addr.sin_family = AF_INET;
     tcp_addr.sin_addr.s_addr = INADDR_ANY;
     tcp_addr.sin_port = htons(MANAGER_PORT);
 
+    // Faz o bind do socket com o endereço e a porta
     if (::bind(listening_socket, reinterpret_cast<sockaddr *>(&tcp_addr),
                sizeof(tcp_addr)) < 0) {
       perror("bind");
       exit(1);
     }
 
+    // Inicia a escuta de conexões
     if (listen(listening_socket, SOMAXCONN) < 0) {
       perror("listen");
       exit(1);
@@ -144,9 +153,9 @@ public:
   }
 
   int register_device(const DeviceInfo &device, DeviceClass cls) {
-    // registra um novo dispositivo no managar
-    // adiciona o dispositivo na lista de dispositivos mantida pelo manager
-    // se for um sensor e se for o primeiro sensor registrado, abre o socket udp para receber dados de sensor
+    // Registra um novo dispositivo no manager
+    // Adiciona o dispositivo na lista de dispositivos mantida pelo manager
+    // Se for um sensor e se for o primeiro sensor registrado, abre o socket udp para receber dados de sensor
     lock_guard<mutex> lock(device_mutex);
     if (cls == DEVICE_CLASS_SENSOR) {
       if(sensors.find(device.id) != sensors.end()){
@@ -154,6 +163,7 @@ public:
         return 1;
       }
       sensors[device.id] = device;
+
       if(!sensor_registered) {
         sensor_registered = true;
 
@@ -175,6 +185,7 @@ public:
             exit(1);
         } 
         
+        // Inicia a thread que recebe os dados dos sensores independentemente
         std::thread(&Manager::udp_listener, this).detach();
       }
     } else if (cls == DEVICE_CLASS_ACTUATOR) {
@@ -189,21 +200,22 @@ public:
   }
 
   void accept_connection() {
-    // recebe uma nova conexão TCP
+    // Recebe uma nova conexão TCP
     while (true) {
       int client_socket = accept(listening_socket, nullptr, nullptr);
 
       cout << "New connection: " << client_socket << endl;
 
-      // Checks the first byte to identify the connection type (device or external controller)
+      // Confere o tipo da mensagem que chegou pelo header, usando MSG_PEEK
       Header header;
       ssize_t n = recv(client_socket, &header, sizeof(header), MSG_PEEK);
       if (n <= 0) {
         close(client_socket);
         continue;
       }
-
       int msg_type = header.first_byte & 0x0f;
+
+      // Consome e trata a mensagem de acordo com o tipo identificado
 
       if (msg_type == REGISTER) {
         RegisterMessage msg;
@@ -223,7 +235,7 @@ public:
 
         printf("New device register: %d\n", msg.id);
 
-        // Send RegisterAck
+        // Envia o REGISTER_ACK
         RegisterAck ack;
         ack.header.first_byte = (PROTOCOL_ID << 4) | REGISTER_ACK;
         ack.id = msg.id;
@@ -231,20 +243,22 @@ public:
           perror("send RegisterAck");
         }
 
+        // Se for um atuador, inicia a thread de tratamento
         if (msg.deviceClass == DEVICE_CLASS_ACTUATOR) {
           std::thread(&Manager::actuator_connection_handler, this, device).detach();
 
-          // Request the actuator's current status so we don't assume ACTUATOR_OFF
+          // Solicita o estado do atuador
           ActuatorStatusReq req;
           req.header.first_byte = (PROTOCOL_ID << 4) | ACTUATOR_STATUS_REQ;
           req.id = msg.id;
           send(client_socket, &req, sizeof(req), 0);
         } else {
-          // Sensors communicate over UDP after registration; TCP socket is no longer needed
+          // Se for um sensor, fecha a conexao TCP, pois a comunicacao pos REGISTER e feita via UDP
           close(client_socket);
         }
 
       } else {
+        // Se a conexao nao for do tipo REGISTER, assume que e um Controlador
         cout << "Controller connected: socket " << client_socket << endl;
         std::thread(&Manager::controller_connection_handler, this, client_socket).detach();
       }
@@ -254,23 +268,22 @@ public:
 
 
   void actuator_connection_handler(DeviceInfo device) {
-    /*
-    Depois que uma conexão é estabelecida com um dispositivo, essa thread é criada para escutar as mensagens 
-    recebidas no socket ligado com esse dispositivo
-    */
+    // Depois que uma conexão é estabelecida com um dispositivo, essa thread é criada 
+    // para escutar as mensagens recebidas no socket ligado com esse dispositivo
+
     Header header;
 
-    // continuamente
+    // Continuamente
     while (true) {
-      // lê o header da mensagem
+      // Lê o header da mensagem
       ssize_t n = recv(device.socket, &header, sizeof(header), MSG_PEEK);
       if (n <= 0)
         return;
 
-      // extrai o tipo da mensagem
+      // Extrai o tipo da mensagem
       int msg_type = header.first_byte & 0x0f;
 
-      // dependendo do tipo da mensagem:
+      // Dependendo do tipo da mensagem:
       switch (msg_type) {
       case (ACTUATOR_STATUS): {
         ActuatorStatusMsg msg;
