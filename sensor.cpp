@@ -27,6 +27,7 @@ public:
       : id(id), type(type), sock(-1), gen(std::random_device{}()),
         dist(pick_mean(type), pick_stddev(type)) {}
 
+  // Retorna o valor médio esperado para cada tipo de sensor
   static float pick_mean(DeviceType t) {
     switch (t) {
       case DEVICE_TEMP_SENSOR_OR_HEATER:      return 25.0f;  // range [15, 35]
@@ -36,6 +37,7 @@ public:
     }
   }
 
+  // Retorna o desvio padrão para cada tipo de dispositivo
   static float pick_stddev(DeviceType t) {
     switch (t) {
       case DEVICE_TEMP_SENSOR_OR_HEATER:      return 5.0f;   // ±2σ ≈ [15, 35]
@@ -46,6 +48,7 @@ public:
   }
 
   void connect_to_manager() {
+    // Cria o socket TCP para o REGISTER
     sock = socket(AF_INET, SOCK_STREAM, 0);
 
     if (sock < 0) {
@@ -53,11 +56,12 @@ public:
       exit(1);
     }
 
+    // Configura o endereço do manager para TCP
     manager_addr.sin_family = AF_INET;
     manager_addr.sin_port = htons(MANAGER_PORT);
     inet_pton(AF_INET, "127.0.0.1", &manager_addr.sin_addr);
 
-    // Separate destination for UDP sensor data (manager listens on SENSOR_PORT)
+    // Configura o endereço do manager para UDP (porta separada para dados de sensor)
     udp_manager_addr.sin_family = AF_INET;
     udp_manager_addr.sin_port = htons(SENSOR_PORT);
     inet_pton(AF_INET, "127.0.0.1", &udp_manager_addr.sin_addr);
@@ -73,9 +77,10 @@ public:
     while (true) {
       if (sock == -1)
         return;
+
+      // Monta e envia a mensagem de REGISTER
       RegisterMessage msg;
       msg.header.first_byte = (PROTOCOL_ID << 4) | REGISTER;
-
       msg.id = id;
       msg.deviceClass = DEVICE_CLASS_SENSOR;
       msg.deviceType = type;
@@ -86,6 +91,7 @@ public:
 
       std::cout << "REGISTER sent" << std::endl;
 
+      // Recebe o REGISTER_ACK do manager e verifica
       RegisterAck ack;
       ssize_t n = recv(sock, &ack, sizeof(ack), MSG_WAITALL);
 
@@ -94,10 +100,11 @@ public:
       }
       std::cout << "REGISTER acknowledged\n";
 
-      // TCP is no longer needed; all subsequent communication is UDP
+      // Fecha a conexao TCP depois do REGISTER, envio de dados e via UDP
       close(sock);
       sock = -1;
 
+      // Cria o socket UDP
       udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
       if (udp_sock < 0) {
           perror("socket (udp)");
@@ -109,14 +116,18 @@ public:
 
   void send_data(void) {
     while (true) {
+      // Gera um valor aleatório com distribuição normal
       float raw_data = dist(gen);
 
       SensorData msg;
       msg.id = id;
 
+      // Converte e ajusta o float para a transmissao
       uint32_t bits;
       memcpy(&bits, &raw_data, sizeof(bits));
       msg.data = htonl(bits);
+
+      // Envia o dado via UDP para o manager
       ssize_t n = sendto(
           udp_sock,
           &msg,
@@ -138,12 +149,14 @@ public:
     }
   }
 
+  // Encerra a execuçao via terminal
   void wait_for_quit() {
     std::cout << "Press 'q' + Enter to disconnect and quit.\n";
     char c;
     while (std::cin.get(c)) {
       if (c == 'q' || c == 'Q') {
         std::cout << "Closing connection...\n";
+        // Fecha os sockets antes de sair
         if (udp_sock >= 0) { close(udp_sock); udp_sock = -1; }
         if (sock >= 0)     { close(sock);     sock = -1; }
         exit(0);
@@ -163,6 +176,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  // Converte e valida o ID do dispositivo se esta entre 0 e 255
   int id_val;
   try {
     id_val = std::stoi(argv[1]);
@@ -174,6 +188,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  // Converte e valida o tipo do dispositivo
   DeviceType type;
   try {
     std::string type_arg = argv[2];
@@ -203,8 +218,10 @@ int main(int argc, char *argv[]) {
 
   sensor.send_register();
 
+  // Inicia a thread de saída independente do loop de dados
   std::thread quit_thread(&Sensor::wait_for_quit, &sensor);
   quit_thread.detach();
 
+  // Entra no loop de envio de dados via UDP
   sensor.send_data();
 }
