@@ -38,9 +38,9 @@ public:
 
   static float pick_stddev(DeviceType t) {
     switch (t) {
-      case DEVICE_TEMP_SENSOR_OR_HEATER:      return 10.0f;   // ±2σ at [15, 35]
-      case DEVICE_SOIL_MOISTURE_OR_IRRIGATION: return 100.0f; // ±2σ at [40, 80]
-      case DEVICE_CO2_SENSOR_OR_INJECTOR:     return 300.0f; // ±2σ at [400, 1000]
+      case DEVICE_TEMP_SENSOR_OR_HEATER:      return 5.0f;   // ±2σ ≈ [15, 35]
+      case DEVICE_SOIL_MOISTURE_OR_IRRIGATION: return 10.0f;  // ±2σ ≈ [40, 80]
+      case DEVICE_CO2_SENSOR_OR_INJECTOR:     return 150.0f; // ±2σ ≈ [400, 1000]
       default:                                return 5.0f;
     }
   }
