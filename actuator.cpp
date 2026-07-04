@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <stdexcept>
 
+// Definiçao da classe atuador
 class Actuator {
 public:
   int id;
@@ -21,6 +22,7 @@ public:
   Actuator(int id, DeviceType type)
       : id(id), type(type), sock(-1), current_status(ACTUATOR_OFF) {}
 
+  // Cria o socket TCP para o REGISTER
   void connect_to_manager() {
     sock = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -29,6 +31,7 @@ public:
       exit(1);
     }
 
+    // Configura o endereço do manager
     sockaddr_in manager_addr{};
     manager_addr.sin_family = AF_INET;
     manager_addr.sin_port = htons(MANAGER_PORT);
@@ -46,9 +49,10 @@ public:
     while (true) {
       if (sock == -1)
         return;
+
+      // Monta e envia a mensagem de REGISTER
       RegisterMessage msg;
       msg.header.first_byte = (PROTOCOL_ID << 4) | REGISTER;
-
       msg.id = id;
       msg.deviceClass = DEVICE_CLASS_ACTUATOR;
       msg.deviceType = type;
@@ -59,6 +63,7 @@ public:
 
       std::cout << "REGISTER sent" << std::endl;
 
+      // Recebe o REGISTER_ACK do manager e verifica
       RegisterAck ack;
       ssize_t n = recv(sock, &ack, sizeof(ack), MSG_WAITALL);
 
@@ -70,6 +75,7 @@ public:
     }
   }
 
+  // Envia o estado atual do atuador (ON/OFF) via ACTUATOR_STATUS
   void send_status() {
     ActuatorStatusMsg msg;
     msg.header.first_byte = (PROTOCOL_ID << 4) | ACTUATOR_STATUS;
@@ -79,14 +85,17 @@ public:
     std::cout << "ACTUATOR_STATUS sent (" << (current_status == ACTUATOR_ON ? "ON" : "OFF") << ")" << std::endl;
   }
 
+  // Aguarda e trata os comandos recebidos do manager via TCP
   void receive_commands() {
     Header header;
     while (true) {
+      // Confere o tipo da mensagem que chegou pelo header, usando MSG_PEEK
       ssize_t n = recv(sock, &header, sizeof(header), MSG_PEEK);
       if (n <= 0) return;
 
       int msg_type = header.first_byte & 0x0f;
 
+      // Consome e trata a mensagem de acordo com o tipo identificado
       switch (msg_type) {
         case ACTUATOR_STATUS_REQ: {
           ActuatorStatusReq req;
@@ -106,6 +115,7 @@ public:
           ssize_t bytes_read = recv(sock, &set_cmd, sizeof(set_cmd), MSG_WAITALL);
           if (bytes_read == sizeof(set_cmd)) {
              if (set_cmd.id == this->id) {
+               // Atualiza o estado e responde com ACTUATOR_STATUS
                current_status = set_cmd.status;
                std::cout << "ACTUATOR_SET received. State changed to " << (current_status == ACTUATOR_ON ? "ON" : "OFF") << std::endl;
                send_status();
@@ -116,7 +126,7 @@ public:
           break;
         }
         default: {
-          //Consumindo bytes desconhecidos
+          // Consome bytes de mensagem desconhecida para não travar o buffer
           recv(sock, &header, sizeof(header), 0);
           break;
         }
@@ -136,6 +146,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  // Converte e valida o ID do dispositivo se esta entre 0 e 255
   int id_val;
   try {
     id_val = std::stoi(argv[1]);
@@ -147,6 +158,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  // Converte e valida o tipo do dispositivo
   DeviceType type;
   try {
     std::string type_arg = argv[2];
@@ -174,6 +186,7 @@ int main(int argc, char *argv[]) {
 
   std::cout << "Connected!" << std::endl;
 
+  // Realiza o REGISTER e fica em loop aguardando comandos
   actuator.send_register();
   actuator.receive_commands();
 
