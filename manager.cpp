@@ -295,9 +295,11 @@ public:
     }
   }
 
+  // Gerencia a conexao com o controlador externo, recebendo mensagens de consulta e configuração
   void controller_connection_handler(int client_socket) {
     Header header;
     while (true) {
+      // Socket por onde as mensagens sao recebidas e enviadas
       ssize_t n = recv(client_socket, &header, sizeof(header), MSG_PEEK);
       if (n <= 0) {
         close(client_socket);
@@ -308,6 +310,7 @@ public:
 
       switch (msg_type) {
 
+        // Consulta o ultimo valor escrito de um parametro
         case SENSOR_QUERY: {
           SensorQuery req;
           ssize_t bytes_read = recv(client_socket, &req, sizeof(req), MSG_WAITALL);
@@ -317,6 +320,7 @@ public:
           }
 
           float value = 0.0f;
+          // Controle de acesso a variavel compartilhada do manager
           {
             lock_guard<mutex> lock(state_mutex);
             switch (req.type) {
@@ -326,10 +330,12 @@ public:
             }
           }
 
+          // Converte o float lido para transmitir
           uint32_t net_val;
           memcpy(&net_val, &value, sizeof(net_val));
           net_val = htonl(net_val);
 
+          // Monta e envia a resposta
           SensorResponse resp;
           resp.header.first_byte = (PROTOCOL_ID << 4) | SENSOR_RESPONSE;
           resp.type = req.type;
@@ -338,6 +344,7 @@ public:
           break;
         }
 
+        // Configuraçao de limite maximo ou minimo de um parametro
         case CONFIG_SET: {
           ConfigSet req;
           ssize_t bytes_read = recv(client_socket, &req, sizeof(req), MSG_WAITALL);
@@ -346,11 +353,12 @@ public:
             return;
           }
 
+          // Converte o valor recebido para float
           uint32_t host_raw = ntohl(req.value);
           float new_val;
           memcpy(&new_val, &host_raw, sizeof(float));
 
-          // Update the limit
+          // Atualiza o limite maximo ou minimo do parametro no manager
           if (req.minMax == BOUNDARY_MIN) {
             switch (req.type) {
               case DATA_TEMPERATURE: min_temp = new_val; break;
@@ -365,7 +373,7 @@ public:
             }
           }
 
-          // Respond with CONFIG_ACK
+          // Responde com CONFIG_ACK
           ConfigAck ack;
           ack.header.first_byte = (PROTOCOL_ID << 4) | CONFIG_ACK;
           ack.type = req.type;
@@ -375,6 +383,7 @@ public:
           break;
         }
 
+        // Consulta os limites maximo e minimo atuais de um parametro
         case QUERY_CONFIG: {
           QueryConfig req;
           ssize_t bytes_read = recv(client_socket, &req, sizeof(req), MSG_WAITALL);
@@ -383,6 +392,7 @@ public:
             return;
           }
 
+          // Leitura das configuraçoes no manager
           float fmin = 0.0f, fmax = 0.0f;
           switch (req.type) {
             case DATA_TEMPERATURE: fmin = min_temp; fmax = max_temp; break;
@@ -390,12 +400,14 @@ public:
             case DATA_CO2: fmin = min_co2; fmax = max_co2; break;
           }
 
+          // Converte o float lido para transmitir
           auto to_net = [](float f) -> uint32_t {
             uint32_t tmp;
             memcpy(&tmp, &f, sizeof(tmp));
             return htonl(tmp);
           };
 
+          // Monta e envia a resposta
           ConfigResponse resp;
           resp.header.first_byte = (PROTOCOL_ID << 4) | CONFIG_RESPONSE;
           resp.type = req.type;
@@ -406,7 +418,7 @@ public:
         }
 
         default: {
-          // Unknown message
+          // Consome mensagens desconhecidas
           recv(client_socket, &header, sizeof(header), 0);
           break;
         }
@@ -414,14 +426,19 @@ public:
     }
   }
 
+  // Altera o status de todos os atuadores de um tipo
   void find_set_actuators(DeviceType tipo, ActuatorStatus status){
+    // Tranca o acesso a lista de atuadores
     lock_guard<mutex> lock(device_mutex);
+    // Percorre os atuadores e altera o status se o tipo for o buscado
     for(auto &[id, device] : actuators){
       if(device.type == tipo && device.status != status){
+        // Constroi a mensagem ACTUATOR_SET
         ActuatorSet msg;
         msg.header.first_byte = (PROTOCOL_ID << 4) | ACTUATOR_SET;
         msg.id = device.id;
         msg.status = status;
+        // Envia a mensagem e atualiza o status do atuador na variavel propria do manager
         send(device.socket, &msg, sizeof(msg), 0);
         device.status = status;
         printf("Set actuator %d to %s\n", device.id, status == ACTUATOR_ON ? "ON" : "OFF");
@@ -429,11 +446,14 @@ public:
     }
   };
 
+  // Controle dos atuadores
   void control_loop(){
     float local_temp, local_co2, local_humidity;
     while(true){
-      //Checar se algum valor esta fora do padrao
+      // Para cada parametro, se a leitura esta fora dos limites,
+      // liga ou desliga os atuadores correspondentes
       
+      // Controle de acesso para ler os valores medidos pelos sensores
       {
         lock_guard<mutex> lock(state_mutex);
         local_temp = temp;
@@ -464,6 +484,8 @@ public:
       sleep(1);
     }
   }
+
+  // COntrole do programa pelo terminal
   void wait_for_quit() {
     std::cout << "Press 'q' + Enter to shut down the manager.\n";
     char c;
@@ -481,8 +503,10 @@ public:
 };
 
 int main(int argc, char *argv[]) {
+  // Instancia o gerenciador
   Manager manager = Manager();
   
+  // Abre os sockets TCP e UDP, e inicia as threads de controle e de escuta de conexões
   manager.open_sockets();
   std::thread(&Manager::control_loop, &manager).detach();
   std::thread quit_thread(&Manager::wait_for_quit, &manager);
