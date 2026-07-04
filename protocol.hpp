@@ -16,7 +16,7 @@ enum DataType : uint8_t { DATA_TEMPERATURE = 0, DATA_HUMIDITY = 1, DATA_CO2 = 2 
 enum MessageType : uint8_t {
   REGISTER = 1,
   REGISTER_ACK = 2,
-  SENSOR_DATA = 3,
+  SENSOR_DATA = 3, // esse acabou não sendo usado
   ACTUATOR_STATUS_REQ = 4,
   ACTUATOR_STATUS = 5,
   ACTUATOR_SET = 6,
@@ -38,6 +38,14 @@ enum Boundary : uint8_t {  BOUNDARY_MIN = 0, BOUNDARY_MAX = 1 };
 
 #pragma pack(push, 1)
 
+/*
+Mudança no protocolo:
+Decidimmos tirar o campo de tamanho de mensagem pois temos um número limitado de tipos
+de mensagem e cada tipo de mensagem na verdade tem tamanho fixo
+O header então só contém um byte para indicar qual é o tipo da mensagem
+Também removemos o identificador do protocolo
+*/
+
 struct Header {
   uint8_t first_byte;
 };
@@ -54,6 +62,11 @@ struct RegisterAck {
   uint8_t id;
 };
 
+/*
+Mudança no protocolo:
+Como a mensagem SENSOR_DATA só é enviada por UDP, e é a única mensagem que é recebida pela porta UDP do manager
+não existe a necessidade de um header para indicar o tipo da mensagem, economizando um byte
+*/
 struct SensorData {
   uint8_t id;
   uint32_t data;
